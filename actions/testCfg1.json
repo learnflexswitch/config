@@ -1,0 +1,27 @@
+{
+ "ConfigData": {
+  "LogicalIntf": [
+   {
+   "Name": "lo1",
+   "Type": "Loopback"
+   }
+  ],
+  "IPv4Intf" : [
+   {
+   "IpAddr" : "1.1.1.1/24",
+   "IntfRef" : "lo1"
+   }
+  ],
+  "IPv4Route" : [
+   {
+   "DestinationNw" : "172.16.0.11",
+   "NetworkMask" : "255.255.255.255",
+   "NextHop" : [
+    {
+    "NextHopIp":"1.1.1.2"
+    }
+   ]
+   }
+  ]  
+ }
+}

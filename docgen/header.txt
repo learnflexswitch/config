@@ -1,0 +1,15 @@
+{ "swagger": "2.0",                                                                                                     
+  "info": {                                                                                                             
+		      "description": "This is a demo of ...\n",                                                                           
+				"version": "1.0.0",                                                                                                                                                                                       
+				"title": "FlexSwitch APIs",                                                                                                
+				"contact": {
+					 "name": "apis@snaproute.com" 
+				}
+  },                                                                                                                    
+  "host": "snaproute.com",                                                                                                 
+  "basePath": "/public/v1",                                                                                              
+  "schemes": [
+		"http"
+   ], 
+  "paths": {

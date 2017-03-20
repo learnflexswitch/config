@@ -1,0 +1,2 @@
+.gitattributes
+*.rb linguist-language=golang
