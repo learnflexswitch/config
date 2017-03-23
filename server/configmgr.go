@@ -89,6 +89,7 @@ func GetConfigHandlerPort(paramsDir string) (bool, string) {
 // configMgr object
 //
 func NewConfigMgr(paramsDir string, logger *logging.Writer) *ConfigMgr {
+        logger.Err("YORK NewConfigMgr, paramsDir=" + paramsDir)
 	mgr := new(ConfigMgr)
 	mgr.logger = logger
 	mgr.paramsDir = paramsDir
@@ -153,7 +154,7 @@ func NewConfigMgr(paramsDir string, logger *logging.Writer) *ConfigMgr {
 	go mgr.clientMgr.ConnectToAllClients(mgr.clientNameCh)
 	go mgr.SigHandler()
 	gConfigMgr = mgr
-
+        logger.Info("YORK Initialization Done!")
 	return mgr
 }
 
@@ -234,6 +235,7 @@ func (mgr *ConfigMgr) AutoCreateConfigObjects() {
 				clientNameList = append(clientNameList, clientName)
 				mgr.logger.Info("Do Global Init and Discover objects for Client: " + clientName)
 				mgr.ConstructSystemParam(clientName)
+                                //mgr.ConstructDpiRuls(clientName)
 				mgr.AutoDiscoverObjects(clientName)
 				mgr.ConfigureComponentLoggingLevel(clientName)
 				mgr.logger.Info("Done Global Init and Discover objects for Client: " + clientName)
@@ -243,6 +245,7 @@ func (mgr *ConfigMgr) AutoCreateConfigObjects() {
 }
 
 func (mgr *ConfigMgr) AutoDiscoverObjects(clientName string) {
+        mgr.logger.Info("YORK, AutoDiscover for: ", clientName)
 	mgr.logger.Debug("AutoDiscover for: ", clientName)
 	if ent, ok := mgr.objectMgr.AutoDiscoverObjMap[clientName]; ok {
 		for _, resource := range ent.ObjList {

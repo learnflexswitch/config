@@ -95,6 +95,10 @@ func (mgr *ConfigMgr) ReadSystemSwVersion() error {
 	return nil
 }
 
+func (mgr *ConfigMgr) ConstructDpiRules(clientName string) error {
+    return nil;
+}
+
 func (mgr *ConfigMgr) ConstructSystemParam(clientName string) error {
 	if clientName != "sysd" {
 		return nil

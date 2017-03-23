@@ -36,6 +36,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+        "io/ioutil"
 	"utils/eventUtils"
 	//"utils/dbutils"
 	//"net/url"
@@ -130,6 +131,90 @@ var ErrString = map[int]string{
 	SRPatchDecodeError:  "Failed to decode patch data.",
 }
 
+//Added for Dpi-Start
+func listAllFiles(path string) []string {
+
+    fileList := []string{}
+    files, err := ioutil.ReadDir(path)
+    if err != nil {
+       fmt.Println(err)
+    }
+    for _, file := range files {
+        fileList =append( fileList, file.Name())
+    }
+    return fileList
+}
+
+func listAllRules(filename string) [] string {
+   content, err := ioutil.ReadFile(filename)
+   if err != nil {
+      fmt.Println(err)
+      return nil
+   }
+   lines := strings.Split(string(content), "\n")
+   return lines
+
+}
+
+func escapeCtrl(json string) string {
+  ret := json
+  ret = strings.Replace(ret,"{","\\{",-1)
+  ret = strings.Replace(ret,"}","\\}",-1)
+  ret = strings.Replace(ret,"\\","\\\\",-1)
+  ret = strings.Replace(ret,"\"","\\\"",-1)
+  return ret
+}
+
+
+func dpiMarshalFile(file string) string {
+   path := "/etc/snort/rules/"
+   json := ""
+   head := "{\"Object\": { \"name\":\"" + file + "\",\"Path\":\"" + path + "\",\"Rules\":["
+   rules := listAllRules(path + file)
+   rulejson := ""
+   for _, rule := range rules {
+      wkrule :=rule
+      wkrule = strings.Trim(wkrule," ")
+      if  wkrule != "" && !strings.HasPrefix(wkrule, "#")  {
+         rule = escapeCtrl(rule)
+         if rulejson == "" {
+            rulejson = "{\"Rule\":\"" + rule + "\"}"
+         }else {
+            rulejson = rulejson + ",{\"Rule\":\"" + rule + "\"}"
+         }
+     }
+   }
+   rulejson = rulejson + "]}"
+   json = head + rulejson + ",\"ObjectId\":\"" + file + "\"}"
+   return json
+}
+
+
+func dpiMarshal(objId string) string {
+   path := "/etc/snort/rules/"
+   json := "{\"CurrentMarker\":0,\"MoreExist\":false,\"NextMarker\":0,\"ObjCount\":"
+   if objId != "" {
+      return dpiMarshalFile(objId)
+   }
+
+   files := listAllFiles(path)
+   json = json + strconv.Itoa(len(files))  + ",\"Objects\":["
+   wkjson :=""
+   for _, file := range files {
+     if wkjson == "" {
+        wkjson = dpiMarshalFile(file)
+     } else {
+        wkjson = wkjson + "," + dpiMarshalFile(file)
+     }
+  }
+  json = json + wkjson + "]}"
+
+  return json
+}
+
+//Added for Dpi-end
+
+
 //Given a code reurn error string
 func SRErrString(errCode int) string {
 	return "Error: " + ErrString[errCode]
@@ -188,6 +273,21 @@ func GetOneConfigObjectForId(w http.ResponseWriter, r *http.Request) {
 	urlStr := ReplaceMultipleSeperatorInUrl(r.URL.String())
 	resource := strings.Split(strings.TrimPrefix(urlStr, gApiMgr.apiBaseConfig), "/")[0]
 	resource = strings.ToLower(resource)
+
+        if resource == "dpirules" {
+            vars := mux.Vars(r)
+            objId := vars["objId"]
+            gApiMgr.ApiCallStats.NumGetCallsSuccess++
+            w.Header().Set("Content-Type", "application/json; charset=UTF-8")
+            w.WriteHeader(http.StatusOK)
+            js := dpiMarshal(objId)
+            w.Write([]byte(js))
+            mylog("YORK, GetOneConfigObjectForId  js=" + js)
+ 
+         return
+
+        }
+
 	objHdl, ok := modelObjs.ConfigObjectMap[resource]
 	if !ok {
 		RespondErrorForApiCall(w, SRNotFound, "")
@@ -237,6 +337,20 @@ func GetOneConfigObject(w http.ResponseWriter, r *http.Request) {
 	resource = strings.Split(strings.TrimPrefix(urlStr, gApiMgr.apiBaseConfig), "/")[0]
 	resource = strings.Split(resource, "?")[0]
 	resource = strings.ToLower(resource)
+            
+        mylog("YORK, GetOneConfigObject, resource=" + resource+ ";urlStr=" + urlStr)
+        if resource == "dpirules" {
+                gApiMgr.ApiCallStats.NumGetCallsSuccess++
+                w.Header().Set("Content-Type", "application/json; charset=UTF-8")
+                w.WriteHeader(http.StatusOK)
+                js := dpiMarshal("")
+                w.Write([]byte(js))
+                mylog("YORK, GetOneConfigObject js=" + js)
+           return
+
+        }
+
+
 	queryDataList := strings.Split(strings.TrimPrefix(urlStr, gApiMgr.apiBaseConfig), "?")
 	if len(queryDataList) > 1 {
 		queryData = queryDataList[1]
@@ -284,6 +398,22 @@ func GetOneStateObjectForId(w http.ResponseWriter, r *http.Request) {
 	resource := strings.Split(strings.TrimPrefix(urlStr, gApiMgr.apiBaseState), "/")[0]
 	resource = strings.Split(resource, "?")[0]
 	resource = strings.ToLower(resource)
+        mylog("YORK, GetOneStateObjectForId, resource=" + resource+ ";urlStr=" + urlStr)
+
+        if resource == "dpirules" {
+            vars := mux.Vars(r)
+            objId := vars["objId"]
+            gApiMgr.ApiCallStats.NumGetCallsSuccess++
+            w.Header().Set("Content-Type", "application/json; charset=UTF-8")
+            w.WriteHeader(http.StatusOK)
+            js := dpiMarshal(objId)
+            w.Write([]byte(js))
+            mylog("YORK, GetOneStateObjectForId js=" + js)
+
+          return
+
+        }
+
 	configObjHdl, ok := modelObjs.ConfigObjectMap[resource]
 	if !ok {
 		RespondErrorForApiCall(w, SRNotFound, "")
@@ -355,6 +485,24 @@ func GetOneStateObject(w http.ResponseWriter, r *http.Request) {
 	resource = strings.Split(strings.TrimPrefix(urlStr, gApiMgr.apiBaseState), "/")[0]
 	resource = strings.Split(resource, "?")[0]
 	resource = strings.ToLower(resource) + "state"
+        
+        mylog("YORK, GetOneStateObject, resource=" + resource+ ";urlStr=" + urlStr)
+
+
+        if resource == "dpirules" || resource == "dpirulesstate" || resource == "dpirulestate" {
+            vars := mux.Vars(r)
+            objId := vars["objId"]
+            gApiMgr.ApiCallStats.NumGetCallsSuccess++
+            w.Header().Set("Content-Type", "application/json; charset=UTF-8")
+            w.WriteHeader(http.StatusOK)
+            js := dpiMarshal(objId)
+            w.Write([]byte(js))
+            mylog("YORK,BulkGetConfigObjects js=" + js)
+
+         return
+
+        }
+
 	queryDataList := strings.Split(strings.TrimPrefix(urlStr, gApiMgr.apiBaseState), "?")
 	if len(queryDataList) > 1 {
 		queryData = queryDataList[1]
@@ -411,6 +559,24 @@ func BulkGetConfigObjects(w http.ResponseWriter, r *http.Request) {
 	resource = strings.Split(resource, "?")[0]
 	resource = resource[:len(resource)-1]
 	resource = strings.ToLower(resource)
+        mylog("YORK, BulkGetConfigObjects, resource=" + resource+ ";urlStr=" + urlStr)
+
+
+        if resource == "dpirules" {
+            vars := mux.Vars(r)
+            objId := vars["objId"]
+            gApiMgr.ApiCallStats.NumGetCallsSuccess++
+            w.Header().Set("Content-Type", "application/json; charset=UTF-8")
+            w.WriteHeader(http.StatusOK)
+            js := dpiMarshal(objId)
+            w.Write([]byte(js))
+            mylog("YORK,BulkGetConfigObjects js=" + js)
+
+         return
+
+        }
+
+
 	objHdl, ok := modelObjs.ConfigObjectMap[resource]
 	if !ok {
 		RespondErrorForApiCall(w, SRNotFound, "")
@@ -467,6 +633,24 @@ func BulkGetStateObjects(w http.ResponseWriter, r *http.Request) {
 	resource = strings.Split(resource, "?")[0]
 	resource = resource[:len(resource)-1]
 	resource = strings.ToLower(resource) + "state"
+
+
+        mylog("YORK, BulkGetStateObjects, resource=" + resource+ ";urlStr=" + urlStr)
+
+       if resource == "dpirulestate" {
+            vars := mux.Vars(r)
+            objId := vars["objId"]
+            gApiMgr.ApiCallStats.NumGetCallsSuccess++
+            w.Header().Set("Content-Type", "application/json; charset=UTF-8")
+            w.WriteHeader(http.StatusOK)
+            js := dpiMarshal(objId)
+            w.Write([]byte(js))
+            mylog("YORK, BulkGetStateObjects js=" + js)
+
+         return
+
+        }
+
 	objHdl, ok := modelObjs.ConfigObjectMap[resource]
 	if !ok {
 		RespondErrorForApiCall(w, SRNotFound, "")
@@ -545,6 +729,8 @@ func ExecuteActionObject(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
 	resource := strings.TrimPrefix(urlStr, gApiMgr.apiBaseAction)
 	resource = strings.ToLower(resource)
+        mylog("YORK, ExecuteActionObject, resource=" + resource+ ";urlStr=" + urlStr)
+
 	if gApiMgr.clientMgr.IsReady() == false {
 		errCode = SRSystemNotReady
 		RespondErrorForApiCall(w, errCode, "")
@@ -614,6 +800,8 @@ func ConfigObjectCreate(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
 	resource := strings.TrimPrefix(urlStr, gApiMgr.apiBaseConfig)
 	resource = strings.ToLower(resource)
+        mylog("YORK, ConfigObjectCreate, resource=" + resource+ ";urlStr=" + urlStr)
+
 	if gApiMgr.clientMgr.IsReady() == false {
 		errCode = SRSystemNotReady
 		RespondErrorForApiCall(w, errCode, "")
@@ -710,6 +898,9 @@ func ConfigObjectDeleteForId(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
 	resource := strings.Split(strings.TrimPrefix(urlStr, gApiMgr.apiBaseConfig), "/")[0]
 	resource = strings.ToLower(resource)
+
+        mylog("YORK, ConfigObjectDeleteForId, resource=" + resource+ ";urlStr=" + urlStr)
+
 	if gApiMgr.clientMgr.IsReady() == false {
 		errCode = SRSystemNotReady
 		RespondErrorForApiCall(w, errCode, "")
@@ -798,6 +989,8 @@ func ConfigObjectDelete(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
 	resource := strings.Split(strings.TrimPrefix(urlStr, gApiMgr.apiBaseConfig), "/")[0]
 	resource = strings.ToLower(resource)
+        mylog("YORK, ConfigObjectDelete, resource=" + resource+ ";urlStr=" + urlStr)
+
 	if gApiMgr.clientMgr.IsReady() == false {
 		errCode = SRSystemNotReady
 		RespondErrorForApiCall(w, errCode, "")
@@ -885,6 +1078,8 @@ func ConfigObjectUpdateForId(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
 	resource := strings.Split(strings.TrimPrefix(urlStr, gApiMgr.apiBaseConfig), "/")[0]
 	resource = strings.ToLower(resource)
+        mylog("YORK, ConfigObjectUpdateForId, resource=" + resource+ ";urlStr=" + urlStr)
+
 	if gApiMgr.clientMgr.IsReady() == false {
 		errCode = SRSystemNotReady
 		RespondErrorForApiCall(w, errCode, "")
@@ -1077,6 +1272,8 @@ func ConfigObjectUpdate(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
 	resource := strings.Split(strings.TrimPrefix(urlStr, gApiMgr.apiBaseConfig), "/")[0]
 	resource = strings.ToLower(resource)
+        mylog("YORK, ConfigObjectUpdate, resource=" + resource+ ";urlStr=" + urlStr)
+
 	if gApiMgr.clientMgr.IsReady() == false {
 		errCode = SRSystemNotReady
 		RespondErrorForApiCall(w, errCode, "")
@@ -1287,6 +1484,8 @@ func EventObjectGet(w http.ResponseWriter, r *http.Request) {
 	urlStr := ReplaceMultipleSeperatorInUrl(r.URL.String())
 	resource := strings.Split(strings.TrimPrefix(urlStr, gApiMgr.apiBaseEvent), "/")[0]
 	resource = strings.ToLower(resource)
+        mylog("YORK, EventObjectGet, resource=" + resource+ ";urlStr=" + urlStr)
+
 	objHdl, ok := modelEvents.EventObjectMap[resource]
 	if !ok {
 		RespondErrorForApiCall(w, SRNotFound, "")

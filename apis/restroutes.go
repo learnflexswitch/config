@@ -34,6 +34,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"os"
+	"fmt"
 	"utils/logging"
 	"utils/ringBuffer"
 )
@@ -83,6 +85,23 @@ type ApiCallStats struct {
 	NumActionCallsSuccess int32
 }
 
+func mylog(text string) error {
+      path := "/tmp/confd.log"
+      f, err :=  os.OpenFile(path, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0660);
+      if err != nil {
+         fmt.Fprintln(os.Stderr, err)
+         return err
+      }
+      defer f.Close()
+
+      _, err = f.WriteString(text + "\n")
+      if err != nil {
+          fmt.Print(os.Stderr,err)
+          return err
+      }
+      return nil
+}
+
 func InitializeApiMgr(paramsDir string, logger *logging.Writer, dbHdl *objects.DbHandler, clientMgr *clients.ClientMgr, objectMgr *objects.ObjectMgr, actionMgr *actions.ActionMgr) *ApiMgr {
 	var err error
 	mgr := new(ApiMgr)
@@ -106,6 +125,9 @@ func InitializeApiMgr(paramsDir string, logger *logging.Writer, dbHdl *objects.D
 	mgr.apiLogRB = new(ringBuffer.RingBuffer)
 	mgr.apiLogRB.SetRingBufferCapacity(1024)
 	mgr.ReadApiCallInfoFromDb()
+
+        mylog("YORK, InitializeApiMgr, mgr.apiBaseAction=" + mgr.apiBaseAction+ ";mgr.apiBaseEvent=" + mgr.apiBaseEvent)
+        
 	gApiMgr = mgr
 	return mgr
 }
@@ -240,14 +262,25 @@ func HandleRestRouteGetConfig(w http.ResponseWriter, r *http.Request) {
 	resource := strings.Split(strings.TrimPrefix(urlStr, gApiMgr.apiBaseConfig), "/")[0]
 	resource = strings.Split(resource, "?")[0]
 	resource = strings.ToLower(resource)
+        mylog("YORK, HandleRestRouteGetConfig, resource=" + resource+ ";urlStr=" + urlStr)
+        if resource == "dpirules" {
+            GetOneConfigObject(w, r)
+            return
+        }
+
 	_, ok := modelObjs.ConfigObjectMap[resource]
 	if ok {
 		GetOneConfigObject(w, r)
-	} else {
+	} else { 
+                mylog("YORK, HandleRestRouteGetConfig modelObjs.ConfigObjectMap OK=" + resource)
 		_, ok := modelObjs.ConfigObjectMap[resource[:len(resource)-1]]
 		if ok {
+                        mylog("YORK, HandleRestRouteGetConfig modelObjs.ConfigObjectMap=" + resource[:len(resource)-1])
 			BulkGetConfigObjects(w, r)
+                        mylog("YORK, HandleRestRouteGetConfig modelObjs.ConfigObjectMap OK")
 		} else {
+                        
+                        mylog("YORK, HandleRestRouteGetConfig NG goto SRNotFound")
 			RespondErrorForApiCall(w, SRNotFound, "")
 		}
 	}
@@ -264,14 +297,27 @@ func HandleRestRouteGetState(w http.ResponseWriter, r *http.Request) {
 	resource := strings.Split(strings.TrimPrefix(urlStr, gApiMgr.apiBaseState), "/")[0]
 	resource = strings.Split(resource, "?")[0]
 	resource = strings.ToLower(resource)
+        mylog("YORK, HandleRestRouteGetState, resource=" + resource+ ";urlStr=" + urlStr)
+
+        if resource == "dpirules" || resource == "dpirulesstate" || resource == "dpirulestate" {
+            GetOneStateObject(w, r)
+            return
+        }
+
 	_, ok := modelObjs.ConfigObjectMap[resource+"state"]
 	if ok {
+                mylog("YORK, HandleRestRouteGetState, modelObjs.ConfigObjectMap OK=" + resource+"state")
 		GetOneStateObject(w, r)
+                mylog("YORK, HandleRestRouteGetState, GetOneStateObject return OK")
 	} else {
+                mylog("YORK, HandleRestRouteGetState, modelObjs.ConfigObjectMap NG=" + resource+"state")
 		_, ok := modelObjs.ConfigObjectMap[resource[:len(resource)-1]+"state"]
+                 mylog("YORK, HandleRestRouteGetState, modelObjs.ConfigObjectMap=" + resource[:len(resource)-1]+"state")
 		if ok {
+                         mylog("YORK, HandleRestRouteGetState,modelObjs.ConfigObjectMap OK, go to BulkGetStateObjects")
 			BulkGetStateObjects(w, r)
 		} else {
+                       mylog("YORK, HandleRestRouteGetState,RespondErrorForApiCall go to SRNotFound")
 			RespondErrorForApiCall(w, SRNotFound, "")
 		}
 	}
