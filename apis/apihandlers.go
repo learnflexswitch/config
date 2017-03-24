@@ -36,8 +36,12 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+        "os"
+        "io"
         "io/ioutil"
 	"utils/eventUtils"
+        "net/http/httputil"
+        "bytes"
 	//"utils/dbutils"
 	//"net/url"
 	//"path"
@@ -108,6 +112,12 @@ const (
 	SRPatchDecodeError  = 18
 )
 
+type RuleFile struct {
+  Name   string `DESCRIPTION: "Name of the rule file"`
+  Path   string `DESCRIPTION: "Path of rule file"`
+  Rules  [] string `DESCRIPTION: "Rules "`
+}
+
 // SR error strings
 var ErrString = map[int]string{
 	SRFail:              "Configuration failed.",
@@ -165,7 +175,135 @@ func escapeCtrl(json string) string {
   return ret
 }
 
+func addRule(file string, rule string) error {
+      f, err :=  os.OpenFile(file, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0660);
+      if err != nil {
+         fmt.Fprintln(os.Stderr, err)
+         return err
+      }
+      defer f.Close()
 
+      _, err = f.WriteString(rule + "\n")
+      if err != nil {
+          fmt.Print(os.Stderr,err)
+          return err
+      }
+      return nil
+}
+
+func exists(rule string, rules [] string) bool {
+   if rules == nil {
+      return false
+   }
+   for _, myrule := range rules {
+     if strings.Trim(myrule," ") == strings.Trim(rule," ") {
+        return true;
+     }
+   }
+   return false
+}
+
+
+
+func delRule(file string, rule string) error {
+
+      content, err := ioutil.ReadFile(file)
+
+      f, err :=  os.OpenFile(file, os.O_RDWR|os.O_CREATE, 0660);
+      if err != nil {
+         fmt.Fprintln(os.Stderr, err)
+         return err
+      }
+      defer f.Close()
+      lines := strings.Split(string(content), "\n")
+      for  _, wkrule := range  lines {
+          if strings.Trim(wkrule, " ") == strings.Trim(rule," ") {
+             wkrule = "#"+ wkrule
+         }
+         _, err = f.WriteString(wkrule + "\n")
+         if err != nil {
+            fmt.Print(os.Stderr,err)
+            return err
+         }
+      }
+      return nil
+}
+
+func updateRule(file string, rule string) error {
+      content, err := ioutil.ReadFile(file)
+      if rule == "" {
+        fmt.Println("No rules needed")
+        return nil
+      }
+
+      f, err :=  os.OpenFile(file, os.O_RDWR|os.O_CREATE, 0660);
+      if err != nil {
+         fmt.Fprintln(os.Stderr, err)
+         return err
+      }
+      defer f.Close()
+      exist := 0
+      lines := strings.Split(string(content), "\n")
+      for  _, wkrule := range  lines {
+         //fmt.Print(wkrule)
+         if strings.Trim(wkrule, " ") == strings.Trim(rule," ") {
+            exist =1
+         }
+         fmt.Print("Wrigint ..." + wkrule)
+         _, err = f.WriteString(wkrule + "\n")
+         if err != nil {
+             fmt.Print(os.Stderr,err)
+             return err
+         }
+
+      }
+      if exist == 0 && rule != "" {
+          f.WriteString(rule + "\n")
+      }
+      return nil
+}
+
+
+func delRules(ruleFile RuleFile) string {
+  path := "/etc/snort/rules/"
+  name := ruleFile.Name
+  filename :=path +name
+
+  delRules := ruleFile.Rules
+  for  _, delRuls := range delRules {
+     delRule(filename,delRuls)
+  }
+  return ""
+
+}
+
+func updateRules(ruleFile RuleFile) string {
+  path := "/etc/snort/rules/"
+  name := ruleFile.Name
+  filename :=path + name
+  //fmt.Println(filename)
+
+  rules := ruleFile.Rules
+
+  if len(rules) == 0 {
+     //err := os.Rename(filename , filename + ".bak")
+     //if err != nil {
+     //   fmt.Println(err)
+     //}
+     //fmt.Println("Rules is 0")
+     return ""
+  }
+
+  for  _, rule := range rules {
+     //fmt.Println(rule.Rule)
+     //fmt.Println("updateRule " + filename + ".." + rule + "\n")
+     updateRule(filename,rule)
+  }
+  return ""
+
+}
+
+/*
 func dpiMarshalFile(file string) string {
    path := "/etc/snort/rules/"
    json := ""
@@ -181,6 +319,30 @@ func dpiMarshalFile(file string) string {
             rulejson = "{\"Rule\":\"" + rule + "\"}"
          }else {
             rulejson = rulejson + ",{\"Rule\":\"" + rule + "\"}"
+         }
+     }
+   }
+   rulejson = rulejson + "]}"
+   json = head + rulejson + ",\"ObjectId\":\"" + file + "\"}"
+   return json
+}
+*/
+
+func dpiMarshalFile(file string) string {
+   path := "/etc/snort/rules/"
+   json := ""
+   head := "{\"Object\": { \"name\":\"" + file + "\",\"Path\":\"" + path + "\",\"Rules\":["
+   rules := listAllRules(path + file)
+   rulejson := ""
+   for _, rule := range rules {
+      wkrule :=rule
+      wkrule = strings.Trim(wkrule," ")
+      if  wkrule != "" && !strings.HasPrefix(wkrule, "#")  {
+         rule = escapeCtrl(rule)
+         if rulejson == "" {
+            rulejson = "\"" + rule + "\""
+         }else {
+            rulejson = rulejson + ",\"" + rule + "\""
          }
      }
    }
@@ -275,8 +437,32 @@ func GetOneConfigObjectForId(w http.ResponseWriter, r *http.Request) {
 	resource = strings.ToLower(resource)
 
         if resource == "dpirules" {
+            objHdl, ok := modelObjs.ConfigObjectMap[resource]
+            if !ok {
+                mylog("YORK, GetOneConfigObjectForId modelObjs.ConfigObjectMap error")
+            } else {
+                mylog("YORK, GetOneConfigObjectForId modelObjs.ConfigObjectMap OK")
+                 _, obj, err = objects.GetConfigObjFromJsonData(r, objHdl)
+                if err != nil {
+                    mylog("YORK, GetOneConfigObjectForId  bjects.GetConfigObjFromJsonData error")
+                    body, err := ioutil.ReadAll(r.Body)
+                    if err != nil {
+                          mylog("YORK, GetOneConfigObjectForId , r.Body=")
+                    }else{
+                          mylog("YORK, GetOneConfigObjectForId , body=" + bytes.NewBuffer(body).String())
+                          
+                    }
+                }else {
+                     mylog("YORK, GetOneConfigObjectForId  bjects.GetConfigObjFromJsonData OK")
+                }
+            }
             vars := mux.Vars(r)
             objId := vars["objId"]
+             
+            key := vars["key"]
+        
+            mylog("YORK, GetOneConfigObjectForId  objId=" + objId)
+            mylog("YORK, GetOneConfigObjectForId  key=" + key)
             gApiMgr.ApiCallStats.NumGetCallsSuccess++
             w.Header().Set("Content-Type", "application/json; charset=UTF-8")
             w.WriteHeader(http.StatusOK)
@@ -339,22 +525,68 @@ func GetOneConfigObject(w http.ResponseWriter, r *http.Request) {
 	resource = strings.ToLower(resource)
             
         mylog("YORK, GetOneConfigObject, resource=" + resource+ ";urlStr=" + urlStr)
+        queryDataList := strings.Split(strings.TrimPrefix(urlStr, gApiMgr.apiBaseConfig), "?")
+        if len(queryDataList) > 1 {
+                queryData = queryDataList[1]
+        }
+        mylog("YORK, GetOneConfigObject,queryData=" + queryData)
+       
+        dump, err := httputil.DumpRequestOut(r, true) 
+        if err == nil {
+           mylog("YORK, GetOneConfigObject, httputil.DumpRequestOut error," )
+        }else {
+            mylog("YORK, GetOneConfigObject, http.Request=" + bytes.NewBuffer(dump).String())
+        }
+
         if resource == "dpirules" {
-                gApiMgr.ApiCallStats.NumGetCallsSuccess++
-                w.Header().Set("Content-Type", "application/json; charset=UTF-8")
-                w.WriteHeader(http.StatusOK)
-                js := dpiMarshal("")
-                w.Write([]byte(js))
-                mylog("YORK, GetOneConfigObject js=" + js)
+           objHdl, ok := modelObjs.ConfigObjectMap[resource]
+           if objHdl != nil {
+                mylog("YORK, GetOneConfigObject modelObjs.ConfigObjectMap objHdlOK")
+           }
+
+           if !ok {
+               mylog("YORK, GetOneConfigObject modelObjs.ConfigObjectMap error")
+           }else {
+                mylog("YORK, GetOneConfigObject modelObjs.ConfigObjectMap OK")
+           }
+            
+           name := ""
+           path :=""
+   
+           if queryData == "" {
+                 body, err := ioutil.ReadAll(io.LimitReader(r.Body, 4096))
+                  if err != nil {
+                     mylog("YORK, GetOneConfigObject ,err TRUE")
+                  }
+
+                 bodys := bytes.NewBuffer(body).String()
+                 if bodys != "" {
+                    var file RuleFile
+                    err := json.Unmarshal(body, &file)
+                    if err != nil {
+                       mylog("YORK, GetOneConfigObject , json.Unmarshal error" )
+                    }else{
+                       name = file.Name
+                       path = file.Path
+                       mylog("YORK, GetOneConfigObject , json.Unmarshal OK" )
+                    }
+                    mylog("YORK, GetOneConfigObject , name=" + name)
+                    mylog("YORK, GetOneConfigObject , path=" + path)
+                       
+                 }
+           }
+           
+           gApiMgr.ApiCallStats.NumGetCallsSuccess++
+           w.Header().Set("Content-Type", "application/json; charset=UTF-8")
+           w.WriteHeader(http.StatusOK)
+           js := dpiMarshal(name)
+           w.Write([]byte(js))
+           mylog("YORK, GetOneConfigObject js=" + js)
            return
 
         }
 
 
-	queryDataList := strings.Split(strings.TrimPrefix(urlStr, gApiMgr.apiBaseConfig), "?")
-	if len(queryDataList) > 1 {
-		queryData = queryDataList[1]
-	}
 	objHdl, ok := modelObjs.ConfigObjectMap[resource]
 	if !ok {
 		RespondErrorForApiCall(w, SRNotFound, "")
@@ -408,8 +640,9 @@ func GetOneStateObjectForId(w http.ResponseWriter, r *http.Request) {
             w.WriteHeader(http.StatusOK)
             js := dpiMarshal(objId)
             w.Write([]byte(js))
+            mylog("YORK, GetOneStateObjectForId objId=" + objId)
             mylog("YORK, GetOneStateObjectForId js=" + js)
-
+   
           return
 
         }
@@ -492,11 +725,14 @@ func GetOneStateObject(w http.ResponseWriter, r *http.Request) {
         if resource == "dpirules" || resource == "dpirulesstate" || resource == "dpirulestate" {
             vars := mux.Vars(r)
             objId := vars["objId"]
+            key := vars["key"]
             gApiMgr.ApiCallStats.NumGetCallsSuccess++
             w.Header().Set("Content-Type", "application/json; charset=UTF-8")
             w.WriteHeader(http.StatusOK)
             js := dpiMarshal(objId)
             w.Write([]byte(js))
+            mylog("YORK,BulkGetConfigObjects objId=" + objId)
+            mylog("YORK,BulkGetConfigObjects key=" + key)
             mylog("YORK,BulkGetConfigObjects js=" + js)
 
          return
@@ -565,11 +801,14 @@ func BulkGetConfigObjects(w http.ResponseWriter, r *http.Request) {
         if resource == "dpirules" {
             vars := mux.Vars(r)
             objId := vars["objId"]
+            key := vars["key"]
             gApiMgr.ApiCallStats.NumGetCallsSuccess++
             w.Header().Set("Content-Type", "application/json; charset=UTF-8")
             w.WriteHeader(http.StatusOK)
             js := dpiMarshal(objId)
             w.Write([]byte(js))
+            mylog("YORK,BulkGetConfigObjects key=" + key)
+            mylog("YORK,BulkGetConfigObjects objId=" + objId)
             mylog("YORK,BulkGetConfigObjects js=" + js)
 
          return
@@ -640,11 +879,15 @@ func BulkGetStateObjects(w http.ResponseWriter, r *http.Request) {
        if resource == "dpirulestate" {
             vars := mux.Vars(r)
             objId := vars["objId"]
+            key := vars["key"]
+            mylog("YORK, BulkGetStateObjects key=" + key)
+            mylog("YORK, BulkGetStateObjects objId=" + objId)
             gApiMgr.ApiCallStats.NumGetCallsSuccess++
             w.Header().Set("Content-Type", "application/json; charset=UTF-8")
             w.WriteHeader(http.StatusOK)
             js := dpiMarshal(objId)
             w.Write([]byte(js))
+            
             mylog("YORK, BulkGetStateObjects js=" + js)
 
          return
@@ -883,6 +1126,42 @@ func ConfigObjectCreate(w http.ResponseWriter, r *http.Request) {
 	return
 }
 
+func ConfigObjectUpdateDeleteDpi(deleteUpdate string, r *http.Request) string {
+      urlStr := ReplaceMultipleSeperatorInUrl(r.URL.String())
+      queryDataList := strings.Split(strings.TrimPrefix(urlStr, gApiMgr.apiBaseConfig), "?")
+      queryData :=""
+      if len(queryDataList) > 1 {
+         queryData = queryDataList[1]
+      }
+      name :=""
+      mylog("YORK, ConfigObjectUpdateDeleteDpi,queryData=" + queryData) 
+      if queryData == "" {
+         body, err := ioutil.ReadAll(io.LimitReader(r.Body, 4096))
+         if err != nil {
+            mylog("YORK, ConfigObjectUpdateDeleteDpi,err TRUE")
+         }
+         bodys := bytes.NewBuffer(body).String()
+         if bodys != "" { 
+            var file RuleFile
+            err := json.Unmarshal(body, &file)
+            if err != nil {
+                mylog("YORK, onfigObjectUpdateDeleteDpi json.Unmarshal error" )
+            }else{
+                name = file.Name 
+                if strings.ToLower(deleteUpdate) == "delete" || strings.ToLower(deleteUpdate) == "del" {
+                    delRules(file)
+                     mylog("YORK, ConfigObjectUpdateDeleteDpi, delRules ")
+                }else {
+                    mylog("YORK, ConfigObjectUpdateDeleteDpi,  updateRules")
+                    updateRules(file)
+                }
+            }
+        }
+     } 
+     return name
+
+}
+
 func ConfigObjectDeleteForId(w http.ResponseWriter, r *http.Request) {
 	var errCode int
 	var objKey string
@@ -898,9 +1177,22 @@ func ConfigObjectDeleteForId(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
 	resource := strings.Split(strings.TrimPrefix(urlStr, gApiMgr.apiBaseConfig), "/")[0]
 	resource = strings.ToLower(resource)
-
+        
         mylog("YORK, ConfigObjectDeleteForId, resource=" + resource+ ";urlStr=" + urlStr)
+        if resource == "dpirules" {
+           //DPI delete fhere 
+            name :=ConfigObjectUpdateDeleteDpi("delete",r)       
 
+           gApiMgr.ApiCallStats.NumGetCallsSuccess++
+           w.Header().Set("Content-Type", "application/json; charset=UTF-8")
+           w.WriteHeader(http.StatusOK)
+           js := dpiMarshal(name)
+           w.Write([]byte(js))
+           mylog("YORK, GetOneConfigObject js=" + js)
+           return
+
+        }
+ 
 	if gApiMgr.clientMgr.IsReady() == false {
 		errCode = SRSystemNotReady
 		RespondErrorForApiCall(w, errCode, "")
@@ -991,6 +1283,21 @@ func ConfigObjectDelete(w http.ResponseWriter, r *http.Request) {
 	resource = strings.ToLower(resource)
         mylog("YORK, ConfigObjectDelete, resource=" + resource+ ";urlStr=" + urlStr)
 
+
+        if resource == "dpirules" {
+           //DPI delete fhere
+            name :=ConfigObjectUpdateDeleteDpi("delete",r)
+
+           gApiMgr.ApiCallStats.NumGetCallsSuccess++
+           w.Header().Set("Content-Type", "application/json; charset=UTF-8")
+           w.WriteHeader(http.StatusOK)
+           js := dpiMarshal(name)
+           w.Write([]byte(js))
+           mylog("YORK, GetOneConfigObject js=" + js)
+           return
+
+        }
+
 	if gApiMgr.clientMgr.IsReady() == false {
 		errCode = SRSystemNotReady
 		RespondErrorForApiCall(w, errCode, "")
@@ -1079,6 +1386,20 @@ func ConfigObjectUpdateForId(w http.ResponseWriter, r *http.Request) {
 	resource := strings.Split(strings.TrimPrefix(urlStr, gApiMgr.apiBaseConfig), "/")[0]
 	resource = strings.ToLower(resource)
         mylog("YORK, ConfigObjectUpdateForId, resource=" + resource+ ";urlStr=" + urlStr)
+
+        if resource == "dpirules" {
+           //DPI delete fhere
+            name :=ConfigObjectUpdateDeleteDpi("update",r)
+
+           gApiMgr.ApiCallStats.NumGetCallsSuccess++
+           w.Header().Set("Content-Type", "application/json; charset=UTF-8")
+           w.WriteHeader(http.StatusOK)
+           js := dpiMarshal(name)
+           w.Write([]byte(js))
+           mylog("YORK, GetOneConfigObject js=" + js)
+           return
+
+        }
 
 	if gApiMgr.clientMgr.IsReady() == false {
 		errCode = SRSystemNotReady
@@ -1273,7 +1594,20 @@ func ConfigObjectUpdate(w http.ResponseWriter, r *http.Request) {
 	resource := strings.Split(strings.TrimPrefix(urlStr, gApiMgr.apiBaseConfig), "/")[0]
 	resource = strings.ToLower(resource)
         mylog("YORK, ConfigObjectUpdate, resource=" + resource+ ";urlStr=" + urlStr)
+        
+        if resource == "dpirules" {
+           //DPI delete fhere
+           name :=ConfigObjectUpdateDeleteDpi("update",r)
 
+           gApiMgr.ApiCallStats.NumGetCallsSuccess++
+           w.Header().Set("Content-Type", "application/json; charset=UTF-8")
+           w.WriteHeader(http.StatusOK)
+           js := dpiMarshal(name)
+           w.Write([]byte(js))
+           mylog("YORK, GetOneConfigObject js=" + js)
+           return
+
+        }
 	if gApiMgr.clientMgr.IsReady() == false {
 		errCode = SRSystemNotReady
 		RespondErrorForApiCall(w, errCode, "")
