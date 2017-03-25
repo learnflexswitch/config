@@ -560,6 +560,7 @@ func GetOneConfigObject(w http.ResponseWriter, r *http.Request) {
                   }
 
                  bodys := bytes.NewBuffer(body).String()
+                 mylog("YORK, GetOneConfigObject ,bodys=" + bodys)
                  if bodys != "" {
                     var file RuleFile
                     err := json.Unmarshal(body, &file)
@@ -1136,28 +1137,31 @@ func ConfigObjectUpdateDeleteDpi(deleteUpdate string, r *http.Request) string {
       name :=""
       mylog("YORK, ConfigObjectUpdateDeleteDpi,queryData=" + queryData) 
       if queryData == "" {
-         body, err := ioutil.ReadAll(io.LimitReader(r.Body, 4096))
+         body, err := ioutil.ReadAll(r.Body)
          if err != nil {
             mylog("YORK, ConfigObjectUpdateDeleteDpi,err TRUE")
-         }
-         bodys := bytes.NewBuffer(body).String()
-         if bodys != "" { 
-            var file RuleFile
-            err := json.Unmarshal(body, &file)
-            if err != nil {
-                mylog("YORK, onfigObjectUpdateDeleteDpi json.Unmarshal error" )
-            }else{
-                name = file.Name 
-                if strings.ToLower(deleteUpdate) == "delete" || strings.ToLower(deleteUpdate) == "del" {
-                    delRules(file)
+         }else {
+            bodys := string(body)
+            mylog("YORK, ConfigObjectUpdateDeleteDpi,budys=" + bodys + "###")
+            if bodys != "" { 
+              var file RuleFile
+              err := json.Unmarshal(body, &file)
+              if err != nil {
+                  mylog("YORK, onfigObjectUpdateDeleteDpi json.Unmarshal error" )
+              }else{
+                  name = file.Name 
+                  if strings.ToLower(deleteUpdate) == "delete" || strings.ToLower(deleteUpdate) == "del" {
+                     delRules(file)
                      mylog("YORK, ConfigObjectUpdateDeleteDpi, delRules ")
-                }else {
-                    mylog("YORK, ConfigObjectUpdateDeleteDpi,  updateRules")
-                    updateRules(file)
-                }
-            }
+                  }else {
+                      mylog("YORK, ConfigObjectUpdateDeleteDpi,  updateRules")
+                      updateRules(file)
+                  }
+              }
+           }
         }
-     } 
+     }
+      mylog("YORK, ConfigObjectUpdateDeleteDpi,name=" + name) 
      return name
 
 }
