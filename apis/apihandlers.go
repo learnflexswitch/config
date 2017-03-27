@@ -355,10 +355,12 @@ func dpiMarshalFile(file string) string {
 func dpiMarshal(objId string) string {
    path := "/etc/snort/rules/"
    json := "{\"CurrentMarker\":0,\"MoreExist\":false,\"NextMarker\":0,\"ObjCount\":"
+   mylog("YORK, dpiMarshal ,objId=" + objId)
    if objId != "" {
       return dpiMarshalFile(objId)
    }
-
+   
+   mylog("YORK, dpiMarshal ,objId2=" + objId)
    files := listAllFiles(path)
    json = json + strconv.Itoa(len(files))  + ",\"Objects\":["
    wkjson :=""
@@ -560,7 +562,6 @@ func GetOneConfigObject(w http.ResponseWriter, r *http.Request) {
                   }
 
                  bodys := bytes.NewBuffer(body).String()
-                 mylog("YORK, GetOneConfigObject ,bodys=" + bodys)
                  if bodys != "" {
                     var file RuleFile
                     err := json.Unmarshal(body, &file)
@@ -1046,6 +1047,36 @@ func ConfigObjectCreate(w http.ResponseWriter, r *http.Request) {
 	resource = strings.ToLower(resource)
         mylog("YORK, ConfigObjectCreate, resource=" + resource+ ";urlStr=" + urlStr)
 
+       if resource == "dpirules" {
+            name := "" 
+            body, err := ioutil.ReadAll(io.LimitReader(r.Body, 8096))
+            if err != nil {
+               mylog("YORK, ConfigObjectCreate ,err TRUE")
+            }
+            bodys := bytes.NewBuffer(body).String()
+            if bodys != "" {
+               var file RuleFile
+               err := json.Unmarshal(body, &file)
+               if err != nil {
+                   mylog("YORK, ConfigObjectCreate json.Unmarshal error" )
+                }else{
+                   name = file.Name
+                   mylog("YORK, ConfigObjectCreate, name=" + name)
+                   updateRules(file)
+                }
+            }
+            
+            mylog("YORK, ConfigObjectCreate name=" + name)
+            gApiMgr.ApiCallStats.NumGetCallsSuccess++
+            w.Header().Set("Content-Type", "application/json; charset=UTF-8")
+            w.WriteHeader(http.StatusOK)
+            js := dpiMarshal(name)
+            w.Write([]byte(js))
+            mylog("YORK,ConfigObjectCreate js=" + js) 
+            return 
+      } 
+
+
 	if gApiMgr.clientMgr.IsReady() == false {
 		errCode = SRSystemNotReady
 		RespondErrorForApiCall(w, errCode, "")
@@ -1137,31 +1168,28 @@ func ConfigObjectUpdateDeleteDpi(deleteUpdate string, r *http.Request) string {
       name :=""
       mylog("YORK, ConfigObjectUpdateDeleteDpi,queryData=" + queryData) 
       if queryData == "" {
-         body, err := ioutil.ReadAll(r.Body)
+         body, err := ioutil.ReadAll(io.LimitReader(r.Body, 4096))
          if err != nil {
             mylog("YORK, ConfigObjectUpdateDeleteDpi,err TRUE")
-         }else {
-            bodys := string(body)
-            mylog("YORK, ConfigObjectUpdateDeleteDpi,budys=" + bodys + "###")
-            if bodys != "" { 
-              var file RuleFile
-              err := json.Unmarshal(body, &file)
-              if err != nil {
-                  mylog("YORK, onfigObjectUpdateDeleteDpi json.Unmarshal error" )
-              }else{
-                  name = file.Name 
-                  if strings.ToLower(deleteUpdate) == "delete" || strings.ToLower(deleteUpdate) == "del" {
-                     delRules(file)
+         }
+         bodys := bytes.NewBuffer(body).String()
+         if bodys != "" { 
+            var file RuleFile
+            err := json.Unmarshal(body, &file)
+            if err != nil {
+                mylog("YORK, onfigObjectUpdateDeleteDpi json.Unmarshal error" )
+            }else{
+                name = file.Name 
+                if strings.ToLower(deleteUpdate) == "delete" || strings.ToLower(deleteUpdate) == "del" {
+                    delRules(file)
                      mylog("YORK, ConfigObjectUpdateDeleteDpi, delRules ")
-                  }else {
-                      mylog("YORK, ConfigObjectUpdateDeleteDpi,  updateRules")
-                      updateRules(file)
-                  }
-              }
-           }
+                }else {
+                    mylog("YORK, ConfigObjectUpdateDeleteDpi,  updateRules")
+                    updateRules(file)
+                }
+            }
         }
-     }
-      mylog("YORK, ConfigObjectUpdateDeleteDpi,name=" + name) 
+     } 
      return name
 
 }
